@@ -156,12 +156,18 @@ autoplot(ts_electricity_daily) + ggtitle("Electricity Demand: Daily")
 ```
 ## Train/Test Split
 ```{r}
-ts_daily_train <- window(ts_electricity_daily, end = c(2009, 365))
-ts_daily_test  <- window(ts_electricity_daily, start = c(2010, 1), end = c(2010, 59))
+ts_daily_train <- window(ts_electricity_daily, 
+                         end = c(2009, 365))
+ts_daily_test  <- window(ts_electricity_daily, 
+                         start = c(2010, 1), 
+                         end = c(2010, 59))
 n_for          <- length(ts_daily_test)
 
-temp_train <- as.numeric(window(ts_temp_daily, end = c(2009, 365)))
-temp_test  <- as.numeric(window(ts_temp_daily, start = c(2010, 1), end = c(2010, 59)))
+temp_train <- as.numeric(window(ts_temp_daily, 
+                                end = c(2009, 365)))
+temp_test  <- as.numeric(window(ts_temp_daily, 
+                                start = c(2010, 1), 
+                                end = c(2010, 59)))
 ```
 
 ## NNAR+Fourier
@@ -230,8 +236,48 @@ autoplot(ts_electricity_daily) +
 # 6. Accuracy
 accuracy_arima_four <- accuracy(ARIMA_Four_for, ts_daily_test)
 accuracy_arima_four
-
 ```
+
+## ARIMA+Fourier (Modified)
+
+```{r}
+# 1. Generate Fourier terms
+fourier_terms_train <- fourier(ts_daily_train, K = c(2, 18))
+fourier_terms_test  <- fourier(ts_daily_train, K = c(2, 18), h = n_for)
+
+# 2. Fit ARIMA with Fourier regressors
+ARIMA_Four_fit <- auto.arima(
+  ts_daily_train,
+  xreg     = fourier_terms_train,
+  seasonal = FALSE,
+  lambda   = 0
+)
+
+# 3. Forecast
+ARIMA_Four_for <- forecast(
+  ARIMA_Four_fit,
+  xreg = fourier_terms_test,
+  h    = n_for
+)
+
+# 4. Plot on test period
+autoplot(ARIMA_Four_for) +
+  ggtitle("Model 2: ARIMA + Fourier Forecast (Jan–Feb 2010)") +
+  ylab("Electricity Demand") +
+  xlab("Time")
+
+# 5. Overlay on full series
+autoplot(ts_electricity_daily) +
+  autolayer(ARIMA_Four_for, series = "ARIMA + Fourier", PI = FALSE) +
+  ggtitle("Model 2: ARIMA + Fourier vs. Observed") +
+  ylab("Electricity Demand")
+
+# 6. Accuracy
+accuracy_arima_four <- accuracy(ARIMA_Four_for, ts_daily_test)
+accuracy_arima_four
+```
+
+
 ##Model Comparison
 ```{r}
 # Build a comparison table
@@ -259,7 +305,7 @@ final_dates <- seq(as.Date("2011-01-01"), as.Date("2011-02-28"), by = "day")
 final_n_for <- length(final_dates)
 
 # 3. ARIMA + Fourier on full data
-K1 <- c(2, 6)
+K1 <- c(2, 18)
 xreg_full_1 <- fourier(ts_full, K = K1)
 fit_arima_full <- auto.arima(
   ts_full,
@@ -297,6 +343,8 @@ final_nnar_df <- data.frame(
   date = final_dates,
   load = as.numeric(fc_nnar_full$mean)
 )
+
+
 ```
 
 ## Save Final Forecasts
@@ -305,7 +353,7 @@ final_nnar_df <- data.frame(
 # ARIMA + Fourier final forecast
 write.csv(
   final_arima_df,
-  file      = "submission_ARIMA_Fourier.csv",
+  file      = "submission_ARIMA_Fourier_modified.csv",
   row.names = FALSE
 )
 

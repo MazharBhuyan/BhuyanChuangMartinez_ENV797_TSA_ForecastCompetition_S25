@@ -241,7 +241,8 @@ accuracy_arima_four
 ## ARIMA+Fourier (Modified)
 
 ```{r}
-# 1. Generate Fourier terms
+# 1. Generate Fourier terms 
+# Better than K (2,6)
 fourier_terms_train <- fourier(ts_daily_train, K = c(2, 18))
 fourier_terms_test  <- fourier(ts_daily_train, K = c(2, 18), h = n_for)
 
@@ -296,7 +297,7 @@ kable(comparison, caption = "ARIMA+Fourier vs. NNAR+Fourier Performance on Test 
 ## Final Retrain & Forecast (Jan 1 2011 – Feb 28 2011)
 
 ```{r final-retrain-forecast, message=FALSE, warning=FALSE}
-
+# Changing to K(2,18)
 # 1. Full series: Jan 1 2005 – Dec 31 2010
 ts_full <- window(ts_electricity_daily, end = c(2010, 365))
 
@@ -344,6 +345,29 @@ final_nnar_df <- data.frame(
   load = as.numeric(fc_nnar_full$mean)
 )
 
+# 4. NNAR + Fourier on full data (Modified)
+K2 <- c(3, 18)
+xreg_full_2 <- fourier(ts_full, K = K2)
+size_sel <- 10
+fit_nnar_full <- nnetar(
+  ts_full,
+  p       = 2,
+  P       = 2,
+  xreg    = xreg_full_2,
+  size    = size_sel,  # smaller hidden layer
+  decay   = 0.01,      # optional weight decay
+  maxNWts = 2000       # allow up to 2000 weights
+)
+xreg_fc_2 <- fourier(ts_full, K = K2, h = final_n_for)
+fc_nnar_full <- forecast(
+  fit_nnar_full,
+  xreg = xreg_fc_2,
+  h    = final_n_for
+)
+final_nnar_df <- data.frame(
+  date = final_dates,
+  load = as.numeric(fc_nnar_full$mean)
+)
 
 ```
 
@@ -360,7 +384,39 @@ write.csv(
 # NNAR + Fourier final forecast
 write.csv(
   final_nnar_df,
-  file      = "submission_NNAR_Fourier.csv",
+  file      = "submission_NNAR_Fourier_modified.csv",
   row.names = FALSE
 )
+```
+
+## NNAR+Fourier (Modified)
+
+```{r}
+K <- c(3, 18)
+xreg_train <- cbind(
+  temp_train,
+  fourier(ts_daily_train, K = K)
+)
+xreg_test <- cbind(
+  temp_test,
+  fourier(ts_daily_train, K = K, h = n_for)
+)
+
+NN_fit <- nnetar(
+  ts_daily_train,
+  p       = 2,
+  P       = 2,
+  xreg    = xreg_train,
+  size    = 10,      # smaller hidden layer
+  maxNWts = 2000,    # allow up to 2000 weights
+  decay   = 0.01     # optional regularization
+)
+NN_for <- forecast(
+  NN_fit,
+  h    = n_for,
+  xreg = xreg_test
+)
+autoplot(NN_for) + ggtitle("Model 4: NNAR+Fourier Forecast")
+accuracy_nnar <- accuracy(NN_for, ts_daily_test)
+
 ```

@@ -161,6 +161,16 @@ accuracy(NN_for_k212_base, ts_daily_test)
 
 ### Model 3: NNAR + Fourier (K = c(2,12)) on Train/Test Data
 ```{r nnar_fourier_k212, message=FALSE, warning=FALSE}
+
+ts_temp_daily <- msts(full_daily$daily_avg_temp, 
+                      seasonal.periods = c(7, 365.25), 
+                      start = decimal_date(as.Date("2005-01-01")))
+
+# Splitting temperature into train/test sets to match electricity demand
+temp_train <- window(ts_temp_daily, end = c(2009, 365))
+temp_test  <- window(ts_temp_daily, start = c(2010, 1), end = c(2010, 59))
+
+
 horizon <- length(ts_daily_test)
 K <- c(2, 12)
 
@@ -266,9 +276,6 @@ fc_nnar_resid_test <- forecast(fit_nnar_resid, h = horizon)
 fc_hybrid_test <- fc_arima_test$mean + fc_nnar_resid_test$mean
 
 
-
-
-
 autoplot(ts_daily_test) +
   autolayer(fc_arima_test$mean, series = "ARIMA", PI = FALSE) +
   autolayer(fc_hybrid_test, series = "ARIMA + NNAR", PI = FALSE) +
@@ -371,6 +378,9 @@ kable(comparison, caption = "Performance Comparison of All Six Models Including 
 ## Model 3: NNAR + Fourier (K = c(2,12)) + Temp
 
 ```{r}
+# defining full time series
+ts_full <- ts_electricity_daily
+
 # Set K for Fourier
 K3 <- c(2, 12)
 
@@ -379,8 +389,8 @@ xreg_full_3 <- cbind(full_daily$daily_avg_temp, fourier(ts_full, K = K3))
 
 # Create forecast regressors: last 59 days of temp + Fourier terms for h = 59
 xreg_fc_3 <- cbind(
-  tail(full_daily$daily_avg_temp, final_n_for),
-  fourier(ts_full, K = K3, h = final_n_for)
+  tail(full_daily$daily_avg_temp, horizon),  # Last 59 days of temperature
+  fourier(ts_full, K = K3, h = horizon)     # Fourier terms for 59-day forecast
 )
 
 # Fit the NNAR model
@@ -394,15 +404,18 @@ fit_nnar_k212_temp <- nnetar(
 # Forecast
 fc_nnar_k212_temp <- forecast(
   fit_nnar_k212_temp,
-  h = final_n_for,
+  h = horizon,
   xreg = xreg_fc_3
 )
-
-# Create forecast dataframe
+# Defining forecast horizon and dates
+final_dates <- seq(as.Date("2011-01-01"), as.Date("2011-02-28"), by = "day")
+horizon <- length(final_dates)
+# Final Forecast df
 final_nnar_k212_temp_df <- data.frame(
   date = final_dates,
   load = as.numeric(fc_nnar_k212_temp$mean)
 )
+
 
 ```
 
@@ -413,7 +426,7 @@ K4 <- c(3, 18)
 
 # Create Fourier regressors
 xreg_full_4 <- fourier(ts_full, K = K4)
-xreg_fc_4   <- fourier(ts_full, K = K4, h = final_n_for)
+xreg_fc_4   <- fourier(ts_full, K = K4, h = horizon)
 
 # Fit the NNAR model with extended size and decay
 fit_nnar_k318 <- nnetar(
@@ -429,7 +442,7 @@ fit_nnar_k318 <- nnetar(
 # Forecast
 fc_nnar_k318 <- forecast(
   fit_nnar_k318,
-  h = final_n_for,
+  h = horizon,
   xreg = xreg_fc_4
 )
 
@@ -462,8 +475,8 @@ res_arima_full <- residuals(fit_arima_full)
 fit_nnar_resid_full <- nnetar(res_arima_full)
 
 # Step 3: Forecast individually
-fc_arima_final <- forecast(fit_arima_full, h = final_n_for)
-fc_nnar_resid_final <- forecast(fit_nnar_resid_full, h = final_n_for)
+fc_arima_final <- forecast(fit_arima_full, h = horizon)
+fc_nnar_resid_final <- forecast(fit_nnar_resid_full, h = horizon)
 
 # Step 4: Combine forecasts
 fc_hybrid_final <- fc_arima_final$mean + fc_nnar_resid_final$mean
@@ -473,8 +486,6 @@ final_hybrid_df <- data.frame(
   date = final_dates,
   load = as.numeric(fc_hybrid_final)
 )
-
-
 ```
 
 # Exporting Dataset

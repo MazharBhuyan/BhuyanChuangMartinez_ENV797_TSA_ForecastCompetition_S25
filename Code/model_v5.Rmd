@@ -13,10 +13,14 @@ Github repository: https://github.com/jessalynlc/BhuyanChuangMartinez_ENV797_TSA
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(
-	include = FALSE,
-	tidy = FALSE,
-	tidy.opts = list(width.cutoff = 80)
+  echo = TRUE,
+  message = FALSE,
+  warning = FALSE,
+  fig.align = "center",
+  fig.width = 7,
+  fig.height = 4
 )
+
 ```
 
 #Data Wrangling
@@ -445,12 +449,12 @@ forecast_results_tbats <- data.frame(
 # Exporting Dataset
 
 ```{r}
-write.csv(forecast_results_k28, file = here::here("Submission Files", "NNAR_Fourier_K28.csv"), row.names = FALSE)
-write.csv(forecast_results_k212_base, file = here::here("Submission Files", "forecast_results_k212_base.csv"), row.names = FALSE)
-write.csv(forecast_results, file = here::here("Submission Files", "NNAR_Fourier.csv"), row.names = FALSE)
-write.csv(final_nnar_k318_df,file = here::here("Submission Files", "submission_nnar_k318.csv"), row.names = FALSE)
-write.csv(forecast_results_tbats,file = here::here("Submission Files", "forecast_results_tbats.csv"), row.names = FALSE)
-write.csv(forecast_results_tbats, "submission_arima_nnar_hybrid.csv", row.names = FALSE)
+# write.csv(forecast_results_k28, file = here::here("Submission Files", "NNAR_Fourier_K28.csv"), row.names = FALSE)
+# write.csv(forecast_results_k212_base, file = here::here("Submission Files", "forecast_results_k212_base.csv"), row.names = FALSE)
+# write.csv(forecast_results, file = here::here("Submission Files", "NNAR_Fourier.csv"), row.names = FALSE)
+# write.csv(final_nnar_k318_df,file = here::here("Submission Files", "submission_nnar_k318.csv"), row.names = FALSE)
+# write.csv(forecast_results_tbats,file = here::here("Submission Files", "forecast_results_tbats.csv"), row.names = FALSE)
+# write.csv(forecast_results_tbats, "submission_arima_nnar_hybrid.csv", row.names = FALSE)
 
 ```
 

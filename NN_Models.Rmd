@@ -1,0 +1,339 @@
+---
+title: "NN Networks"
+always_allow_html: true
+editor_options: 
+  chunk_output_type: console
+  markdown: 
+    wrap: sentence
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,tidy.opts=list(width.cutoff=80), tidy=FALSE) 
+```
+
+```{r package, message=FALSE, warning=FALSE}
+library(lubridate)
+library(ggplot2)
+library(forecast)  
+library(Kendall)
+library(tseries)
+library(outliers)
+library(tidyverse)
+library(smooth)
+library(zoo)
+library(kableExtra)
+library(readxl)
+library(xts)
+```
+
+#Data Import and Primary Cleaning
+```{r}
+#Importing time series data (relative humidity and temperature optional but importing)
+
+#load data: this is daily data, with 24 different sensors
+load_data <- read_excel(
+  path = "./Data/load.xlsx",
+  sheet = 1
+)
+
+#There are 6 NA  andd 17 zeros in data. They would have low impact in the overall
+sum(is.na(load_data))
+sum(load_data == 0, na.rm = TRUE)
+
+#relative humidity: hourly data, with 28 different sensors
+#I would estimate a mean 
+relative_humidity_data <- read_excel(
+  path = "./Data/relative_humidity.xlsx",
+  sheet = 1
+)
+
+#There are 0 NA and 30 zeros. They would have low impact
+sum(is.na(relative_humidity_data))
+sum(relative_humidity_data == 0, na.rm = TRUE)
+
+#temperature data: hourly data, with 28 different sensors
+temperature_data <- read_excel(
+  path = "./Data/temperature.xlsx",
+  sheet = 1
+)
+
+#There are 0 NA and one zero. They would have low impact
+sum(is.na(temperature_data))
+sum(temperature_data == 0, na.rm = TRUE)
+
+```
+
+```{r}
+#Processing load data - wrangling to allow the estimation per year, month, day, hour
+load_processed <- load_data %>%
+  pivot_longer(
+    cols = starts_with("h"), 
+    names_to = "hour", 
+    values_to = "electricity_demand"
+  ) %>%
+  mutate(
+    hour = as.integer(sub("h", "", hour)),  # Extract numeric part from "h1", "h2", etc.
+    date = ymd(date),  
+    year = year(date), 
+    month = month(date), 
+    day = day(date)
+  ) %>% 
+  select(date, year, month, day, hour, electricity_demand)
+
+# Processing Humidity Data: wrangling to allow the estimation per year, month, day, hour
+humidity_processed <- relative_humidity_data %>%
+  pivot_longer(
+    cols = starts_with("rh"), 
+    names_to = "hour", 
+    values_to = "relative_humidity"
+  ) %>%
+  mutate(
+    hour = as.integer(gsub("[^0-9]", "", hour)),  # Extract only numeric characters (e.g., "rh_ws15" becomes 15)
+    date = ymd(date),  
+    year = year(date), 
+    month = month(date), 
+    day = day(date)
+  ) %>% 
+  select(date, year, month, day, hour, relative_humidity)
+
+# Processing Temperature Data: wrangling to allow the estimation per year, month, day, hour
+temp_processed <- temperature_data %>%
+  pivot_longer(
+    cols = starts_with("t"), 
+    names_to = "hour", 
+    values_to = "temperature"  # Corrected: use "temperature" instead of "relative_humidity"
+  ) %>%
+  mutate(
+    hour = as.integer(gsub("[^0-9]", "", hour)),  # Extract numeric part
+    date = ymd(date),  
+    year = year(date), 
+    month = month(date), 
+    day = day(date)
+  ) %>% 
+  select(date, year, month, day, hour, temperature)
+```
+## Converting to daily by taking averages
+
+```{r}
+# Converting each processed dataset to daily values
+daily_load <- load_processed %>%
+  group_by(date) %>%
+  summarise(daily_avg_load = mean(electricity_demand, na.rm = TRUE)) %>%
+  ungroup()
+
+daily_humidity <- humidity_processed %>%
+  group_by(date) %>%
+  summarise(daily_avg_humidity = mean(relative_humidity, na.rm = TRUE)) %>%
+  ungroup()
+
+daily_temp <- temp_processed %>%
+  group_by(date) %>%
+  summarise(daily_avg_temp = mean(temperature, na.rm = TRUE)) %>%
+  ungroup()
+
+```
+## Merging the daily datasets to a full daily dataset 
+
+```{r}
+# Merging the daily datasets into one full dataset by date
+full_daily <- daily_load %>%
+  inner_join(daily_temp, by = "date") %>%
+  inner_join(daily_humidity, by = "date") %>%
+  arrange(date)
+
+# Preview the merged full dataset
+head(full_daily)
+```
+##Converting to time series object
+
+```{r message=FALSE, warning=FALSE}
+# Create the daily time series object from the merged full_daily dataset
+# I use msts() to capture both weekly (7-day) and annual (365.25-day) seasonal patterns.
+ts_electricity_daily <- msts(full_daily$daily_avg_load, 
+                              seasonal.periods = c(7, 365.25), 
+                              start = decimal_date(as.Date("2005-01-01")))
+
+# I plot the full daily series to verify it looks as expected.
+autoplot(ts_electricity_daily) + ggtitle("Electricity Demand: Daily")
+
+# Now, I split the time series into training and test sets.
+# The training set is from January 1, 2005, to December 31, 2009.
+# The test set (for validation) covers January 1 to February 28, 2010.
+# I use the window() function to create these subsets.
+
+ts_daily_train <- window(ts_electricity_daily, end = c(2009, 365))
+ts_daily_test  <- window(ts_electricity_daily, start = c(2010, 1), end = c(2010, 59))
+
+# I visualize the training and test sets to confirm the split.
+autoplot(ts_daily_train) + ggtitle("Training Set: Daily Demand (2005-2009)")
+autoplot(ts_daily_test) + ggtitle("Test Set: Daily Demand (Jan-Feb 2010)")
+```
+
+#Neural Network Models
+
+##p = 2, P = 2, K = c(2,12)
+```{r ETS, echo=TRUE, message=FALSE, warning=FALSE}
+horizon <- length(ts_daily_test)
+
+NN_fit <- nnetar(ts_daily_train,
+                  p=2,
+                  P=2,
+                  xreg=fourier(ts_daily_train, K=c(2,12)))
+
+NN_for <- forecast(NN_fit, h=horizon,xreg=fourier(ts_daily_train, 
+                                           K=c(2,12),h = horizon))
+
+#Plot model + observed data
+autoplot(ts_daily_train) +
+   autolayer(NN_for, series="Neural Network",PI=FALSE) +
+   ylab("Load") 
+
+accuracy_NN_for <- accuracy(NN_for, ts_daily_test)
+accuracy_NN_for
+```
+
+               ME         RMSE       MAE        MPE      MAPE      MASE     ACF1 Theil's U
+Training set  -0.8713464  154.466  111.3658 -0.4865963  3.371852 0.1447422 -0.1308867        NA
+Test set     641.3090394 1942.737 1600.4780  5.1390523 31.937919 2.0801424  0.8493126  2.370443
+
+##p = 6, P = 3, K = c(2,12)
+Increasing the number of past lags and seasonal lags to increase the amount of past information.
+```{r ETS, echo=TRUE, message=FALSE, warning=FALSE}
+horizon <- length(ts_daily_test)
+
+NN_fit <- nnetar(ts_daily_train,
+                  p=6,
+                  P=3,
+                  xreg=fourier(ts_daily_train, K=c(2,12)))
+
+NN_for <- forecast(NN_fit, h=horizon,xreg=fourier(ts_daily_train, 
+                                           K=c(2,12),h = horizon))
+
+#Plot model + observed data
+autoplot(ts_daily_train) +
+   autolayer(NN_for, series="Neural Network",PI=FALSE) +
+   ylab("Load") 
+
+accuracy_NN_for <- accuracy(NN_for, ts_daily_test)
+accuracy_NN_for
+```
+The error on the test set seems to have gone up, so probably will not be using this model.
+
+                      ME       RMSE        MAE         MPE     MAPE       MASE       ACF1 Theil's U
+Training set   0.1183327   31.69454   22.30719 -0.06463893  0.71525 0.02899267 -0.2279991        NA
+Test set     928.1271916 2137.16583 1837.29319 10.94731840 36.38336 2.38793125  0.8417433  2.593319
+
+##p = 2, P = 2, K = c(3,15)
+For the first seasonality, using 5 harmonics. For the second seasonality, using 15 harmonics.
+
+```{r ETS, echo=TRUE, message=FALSE, warning=FALSE}
+NN_fit <- nnetar(ts_daily_train,
+                  p=2,
+                  P=2,
+                  xreg=fourier(ts_daily_train, K=c(3, 15)))
+
+NN_for <- forecast(NN_fit, h=horizon,xreg=fourier(ts_daily_train, 
+                                           K=c(3,15),h = horizon))
+
+#Plot model + observed data
+autoplot(ts_daily_train) +
+   autolayer(NN_for, series="Neural Network",PI=FALSE) +
+   ylab("Load") 
+
+accuracy_NN_for <- accuracy(NN_for, ts_daily_test)
+accuracy_NN_for
+```
+The error on the test set went up here, so probably will not stick with this.
+
+                      ME      RMSE        MAE        MPE     MAPE       MASE       ACF1 Theil's U
+Training set  -0.7055144   73.2614   51.20423 -0.1823739  1.59530 0.06655017 -0.1012514        NA
+Test set     789.7083269 2003.7694 1766.25663  8.1477621 35.52517 2.29560498  0.8344838  2.488114
+
+##p = 2, P = 2, K = c(2,13)
+For the first seasonality, using 5 harmonics. For the second seasonality, using 15 harmonics.
+
+```{r ETS, echo=TRUE, message=FALSE, warning=FALSE}
+NN_fit <- nnetar(ts_daily_train,
+                  p=2,
+                  P=2,
+                  xreg=fourier(ts_daily_train, K=c(2, 13)))
+
+NN_for <- forecast(NN_fit, h=horizon,xreg=fourier(ts_daily_train, 
+                                           K=c(2,13),h = horizon))
+
+#Plot model + observed data
+autoplot(ts_daily_train) +
+   autolayer(NN_for, series="Neural Network",PI=FALSE) +
+   ylab("Load") 
+
+accuracy_NN_for <- accuracy(NN_for, ts_daily_test)
+accuracy_NN_for
+```
+
+                      ME      RMSE        MAE        MPE      MAPE      MASE       ACF1 Theil's U
+Training set  -0.4984742  118.6062   85.68213 -0.3390185  2.595967 0.1113611 -0.1028054        NA
+Test set     730.8305853 2018.3051 1715.24692  6.7696245 34.261757 2.2293076  0.8349024  2.470025
+
+##p = 2, P = 2, K = c(2,8)
+Trying to improvegeneralization
+
+```{r ETS, echo=TRUE, message=FALSE, warning=FALSE}
+NN_fit <- nnetar(ts_daily_train,
+                  p=2,
+                  P=2,
+                  xreg=fourier(ts_daily_train, K=c(2, 8)))
+
+NN_for <- forecast(NN_fit, h=horizon,xreg=fourier(ts_daily_train, 
+                                           K=c(2,8),h = horizon))
+
+#Plot model + observed data
+autoplot(ts_daily_train) +
+   autolayer(NN_for, series="Neural Network",PI=FALSE) +
+   ylab("Load") 
+
+accuracy_NN_for <- accuracy(NN_for, ts_daily_test)
+accuracy_NN_for
+```
+
+Some better error metrics on test set, but not for all, still worth trying to run it.
+
+## Final forecast for best neural networks of interest
+```{r}
+# submission forecast horizon: 59 days (from Jan 1, 2011 to Feb 28, 2011)
+horizon_final <- 59
+
+NN_fit_22_final <- nnetar(ts_electricity_daily,
+                  p=2,
+                  P=2,
+                  xreg=fourier(ts_electricity_daily, K=c(2,12)))
+NN_for_22_final <- forecast(NN_fit_22_final, h=horizon_final,xreg=fourier(ts_daily_train, 
+                                           K=c(2,12),h = horizon_final))
+
+NN_fit_28_final <- nnetar(ts_electricity_daily,
+                  p=2,
+                  P=2,
+                  xreg=fourier(ts_electricity_daily, K=c(2,8)))
+NN_for_28_final <- forecast(NN_fit_28_final, h=horizon_final,xreg=fourier(ts_daily_train, 
+                                           K=c(2,8),h = horizon_final))
+```
+
+## Saving the forecasts
+```{r}
+
+template <- read_excel("./Data/load.xlsx")
+
+# NN forecast according to template
+final_forecast_NN_df <- data.frame(
+   date = time(NN_for_22_final$mean),
+   load = as.numeric(NN_for_22_final$mean))
+
+write.csv(final_forecast_NN_df, file = "submission_forecast_NN.csv", row.names = FALSE)
+
+# NN forecast according to template
+final_forecast_NN_28_df <- data.frame(
+   date = time(NN_for_28_final$mean),
+   load = as.numeric(NN_for_28_final$mean))
+
+write.csv(final_forecast_NN_28_df, file = "submission_forecast_NN_28.csv", row.names = FALSE)
+
+```

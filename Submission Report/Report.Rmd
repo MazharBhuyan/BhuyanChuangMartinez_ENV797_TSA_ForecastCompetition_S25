@@ -1,12 +1,14 @@
 ---
 title: "Bhuyan_Chuang_Martinez_CompetitionReport_S25"
-author: "Mazhar Bhuyan, Jisup Kwak, Yuqi Yang"
+author: "Mazhar Bhuyan"
 date: "2025-04-25"
 output:
   pdf_document:
     latex_engine: xelatex
     toc: true
     toc_depth: 2
+editor_options: 
+  chunk_output_type: console
 ---
 
 ```{r setup, include=FALSE}
@@ -16,9 +18,12 @@ knitr::opts_chunk$set(
   warning = FALSE,
   fig.align = "center",
   fig.width = 7,
-  fig.height = 4
+  fig.height = 4,
+  tidy = FALSE,
+  tidy.opts = list(width.cutoff = 80)
 )
 ```
+
 
 ## GitHub Repository
 
@@ -32,17 +37,31 @@ This report presents our forecasting approach for the ENV797 TSA Forecasting Com
 
 The dataset includes hourly electricity load, relative humidity, and temperature data from January 1, 2005 to December 31, 2010. These were aggregated into daily averages to facilitate daily forecasting.
 
-```{r data-wrangling, echo=TRUE}
-library(readxl)
-library(dplyr)
-library(tidyr)
+```{r loading packages, echo=FALSE}
 library(lubridate)
+library(ggplot2)
+library(forecast)  
+library(Kendall)
+library(tseries)
+library(outliers)
+library(tidyverse)
+library(smooth)
+library(zoo)
+library(kableExtra)
+library(readxl)
+library(xts)
+library(here)
+```
 
+```{r data import, echo=FALSE, warning=FALSE}
 # Load data
-load_data <- read_excel("./Data/load.xlsx")
-relative_humidity_data <- read_excel("./Data/relative_humidity.xlsx")
-temperature_data <- read_excel("./Data/temperature.xlsx")
+load_data <- read_excel(here::here("Data", "load.xlsx"))
+relative_humidity_data <- read_excel(here::here("Data", "relative_humidity.xlsx"))
+temperature_data <- read_excel(here::here("Data", "temperature.xlsx"))
 
+```
+
+```{r data wrangling, echo=FALSE, warning=FALSE}
 # Process load data
 load_processed <- load_data %>%
   pivot_longer(cols = starts_with("h"), names_to = "hour", values_to = "electricity_demand") %>%
@@ -253,8 +272,6 @@ Each of the top-performing models had unique strengths:
 
 - **Model 6 (ARIMA + NNAR Hybrid)** outperformed all other models by combining linear and nonlinear components. The ARIMA model captured trend and autocorrelation, while the NNAR learned residual nonlinearities. This hybridization proved especially effective in reducing bias and improving generalization.
 
-
-Among all models tested, the ARIMA + NNAR Hybrid model produced one of the most accurate forecasts, outperforming the benchmark model. Incorporating Fourier terms significantly improved model performance in both neural and regression-based approaches. Temperature as a regressor showed mixed results, often increasing model complexity without clear gains.
 
 This report reflects our systematic approach to model selection, validation, and forecasting. We used reproducible workflows and version control via GitHub throughout the project.
 

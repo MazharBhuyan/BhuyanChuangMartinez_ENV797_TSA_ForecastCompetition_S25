@@ -159,45 +159,42 @@ autoplot(ts_daily_train) +
 accuracy(NN_for_k212_base, ts_daily_test)
 ```
 
-### Model 3: NNAR + Fourier (K = c(2,12)) on Train/Test Data
+### Model 3: NNAR + Fourier on Train/Test Data
 ```{r nnar_fourier_k212, message=FALSE, warning=FALSE}
 
-ts_temp_daily <- msts(full_daily$daily_avg_temp, 
-                      seasonal.periods = c(7, 365.25), 
-                      start = decimal_date(as.Date("2005-01-01")))
-
-# Splitting temperature into train/test sets to match electricity demand
-temp_train <- window(ts_temp_daily, end = c(2009, 365))
-temp_test  <- window(ts_temp_daily, start = c(2010, 1), end = c(2010, 59))
-
+# NNAR + Fourier Model
+# I chose to use a Neural Network Autoregressive (NNAR) model with Fourier terms (K = c(2, 12))
+# to capture complex seasonal and nonlinear patterns in the daily electricity data.
+# I initially experimented with smaller K values, but the fit was too rigid.
+# Increasing K allowed the model to flexibly capture both short- and long-term seasonality.
 
 horizon <- length(ts_daily_test)
-K <- c(2, 12)
 
-xreg_train <- cbind(
-  temp_train,
-  fourier(ts_daily_train, K = K)
-)
-xreg_test <- cbind(
-  temp_test,
-  fourier(ts_daily_train, K = K, h = horizon)
+# Fit the NNAR model with Fourier terms
+NNAR_Fourier_fit <- nnetar(
+  ts_daily_train, 
+  p = 2, P = 2, 
+  xreg = fourier(ts_daily_train, K = c(2, 12))
 )
 
-NN_fit_k212 <- nnetar(
-  ts_daily_train,
-  p    = 2,
-  P    = 2,
-  xreg = xreg_train
+# Forecast using the fitted model
+NNAR_Fourier_forecast <- forecast(
+  NNAR_Fourier_fit, 
+  h = horizon, 
+  xreg = fourier(ts_daily_train, K = c(2, 12), h = horizon)
 )
 
-NN_for_k212 <- forecast(
-  NN_fit_k212,
-  h    = horizon,
-  xreg = xreg_test
-)
+# Plot the forecast against the test data
+# This visual check helped me confirm that the forecast captured both the trend and seasonal fluctuation well.
+autoplot(ts_daily_test) + 
+  autolayer(NNAR_Fourier_forecast, series = "NNAR + Fourier (K=2,12)")
 
-autoplot(NN_for_k212) + ggtitle("NNAR + Fourier (K = c(2,12)) Forecast")
-accuracy(NN_for_k212, ts_daily_test)
+# Calculate accuracy metrics
+
+accuracy(NNAR_Fourier_forecast, ts_daily_test) # Score 23.48
+
+
+
 ```
 
 ### Model 4: NNAR + Fourier (K = c(3,18)) on Train/Test Data
@@ -225,7 +222,7 @@ NN_for_k318 <- forecast(
 )
 
 autoplot(NN_for_k318) + ggtitle("Model 4: NNAR + Fourier (K = c(3,18)) Forecast on Test Data")
-accuracy(NN_for_k318, ts_daily_test)
+accuracy(NN_for_k318, ts_daily_test) # Score 22.68
 ```
 
 
@@ -250,172 +247,122 @@ autoplot(ts_daily_train) +
 accuracy(TBATS_for, ts_daily_test)
 ```
 
-### Model 6: ARIMA + NNAR Hybrid on Train/Test Data
-
-```{r}
-# Convert to univariate ts with daily frequency (e.g., yearly seasonality only)
-# 1. Make sure your input is a plain ts object
-ts_daily_train_ts <- ts(as.numeric(ts_daily_train), start = c(2005, 1), frequency = 365.25)
-
-# 2. Fit plain ARIMA model
-fit_arima <- auto.arima(ts_daily_train_ts, seasonal = TRUE)
-
-# 3. Forecast ARIMA
-fc_arima_test <- forecast(fit_arima, h = horizon)
-
-# 4. Get ARIMA residuals
-res_arima <- residuals(fit_arima)
-
-# 5. Fit NNAR on residuals
-fit_nnar_resid <- nnetar(res_arima)
-
-# 6. Forecast residuals
-fc_nnar_resid_test <- forecast(fit_nnar_resid, h = horizon)
-
-# 7. Combine ARIMA + NNAR forecasts
-fc_hybrid_test <- fc_arima_test$mean + fc_nnar_resid_test$mean
-
-
-autoplot(ts_daily_test) +
-  autolayer(fc_arima_test$mean, series = "ARIMA", PI = FALSE) +
-  autolayer(fc_hybrid_test, series = "ARIMA + NNAR", PI = FALSE) +
-  ggtitle("Model 6: ARIMA + NNAR Hybrid Forecast") +
-  ylab("Load")
-
-
-fc_hybrid_test <- fc_arima_test$mean + fc_nnar_resid_test$mean
-
-# Convert hybrid forecast to a time series to match test set
-fc_hybrid_ts <- ts(fc_hybrid_test, start = start(ts_daily_test), frequency = frequency(ts_daily_test))
-
-# Compute accuracy
-accuracy_hybrid <- accuracy(fc_hybrid_ts, ts_daily_test)
-```
 
 
 ### Model Comparison: NNAR + Fourier + TBATS
 
 ```{r compare-nnar-models, message=FALSE, warning=FALSE}
+
+
+# Compare performance across all six models
+
 comparison <- data.frame(
   Model = c(
-    "Model 1: NNAR + Fourier (K=2,8)",
-    "Model 2: NNAR + Fourier (K=2,12) Baseline",
-    "Model 3: NNAR + Fourier (K=2,12) + Temp",
-    "Model 4: NNAR + Fourier (K=3,18)",
-    "Model 5: TBATS",
-    "Model 6: ARIMA + NNAR Hybrid"
+    "Model 1: NNAR + Fourier (K = c(2,8))",
+    "Model 2: NNAR + Fourier (K = c(2,12)) Baseline",
+    "Model 3: NNAR + Fourier (K = c(2,12)) on Test",
+    "Model 4: NNAR + Fourier (K = c(3,18))",
+    "Model 5: TBATS"
   ),
   RMSE = c(
     accuracy(NN_for_k28, ts_daily_test)[2, "RMSE"],
     accuracy(NN_for_k212_base, ts_daily_test)[2, "RMSE"],
-    accuracy(NN_for_k212, ts_daily_test)[2, "RMSE"],
+    accuracy(NNAR_Fourier_forecast, ts_daily_test)[2, "RMSE"],
     accuracy(NN_for_k318, ts_daily_test)[2, "RMSE"],
-    accuracy(TBATS_for, ts_daily_test)[2, "RMSE"],
-    accuracy_hybrid["RMSE"]
+    accuracy(TBATS_for, ts_daily_test)[2, "RMSE"]
   ),
   MAE = c(
     accuracy(NN_for_k28, ts_daily_test)[2, "MAE"],
     accuracy(NN_for_k212_base, ts_daily_test)[2, "MAE"],
-    accuracy(NN_for_k212, ts_daily_test)[2, "MAE"],
+    accuracy(NNAR_Fourier_forecast, ts_daily_test)[2, "MAE"],
     accuracy(NN_for_k318, ts_daily_test)[2, "MAE"],
-    accuracy(TBATS_for, ts_daily_test)[2, "MAE"],
-    accuracy_hybrid["MAE"]
+    accuracy(TBATS_for, ts_daily_test)[2, "MAE"]
   ),
   MAPE = c(
     accuracy(NN_for_k28, ts_daily_test)[2, "MAPE"],
     accuracy(NN_for_k212_base, ts_daily_test)[2, "MAPE"],
-    accuracy(NN_for_k212, ts_daily_test)[2, "MAPE"],
+    accuracy(NNAR_Fourier_forecast, ts_daily_test)[2, "MAPE"],
     accuracy(NN_for_k318, ts_daily_test)[2, "MAPE"],
-    accuracy(TBATS_for, ts_daily_test)[2, "MAPE"],
-    accuracy_hybrid["MAPE"]
+    accuracy(TBATS_for, ts_daily_test)[2, "MAPE"]
   )
 )
 
-kable(comparison, caption = "Performance Comparison of All Six Models Including ARIMA + NNAR Hybrid")
+# Nicely formatted table
+kable(
+  comparison, 
+  caption = "Performance Comparison of All 5 Models (Train/Test Evaluation)",
+  digits = 3
+)
 
-
-
-# comparison <- data.frame(
-#   Model = c(
-#     "Model 1: NNAR + Fourier (K=2,8)",
-#     "Model 2: NNAR + Fourier (K=2,12) Baseline",
-#     "Model 3: NNAR + Fourier (K=2,12) + Temp",
-#     "Model 4: NNAR + Fourier (K=3,18)",
-#     "Model 5: TBATS",
-#     "Model 6: ARIMA + NNAR Hybrid"
-#   ),
-#   RMSE = c(
-#     accuracy(NN_for_k28, ts_daily_test)[2, "RMSE"],
-#     accuracy(NN_for_k212_base, ts_daily_test)[2, "RMSE"],
-#     accuracy(NN_for_k212, ts_daily_test)[2, "RMSE"],
-#     accuracy(NN_for_k318, ts_daily_test)[2, "RMSE"],
-#     accuracy(TBATS_for, ts_daily_test)[2, "RMSE"],
-#     accuracy_hybrid[2, "RMSE"]
-#   ),
-#   MAE = c(
-#     accuracy(NN_for_k28, ts_daily_test)[2, "MAE"],
-#     accuracy(NN_for_k212_base, ts_daily_test)[2, "MAE"],
-#     accuracy(NN_for_k212, ts_daily_test)[2, "MAE"],
-#     accuracy(NN_for_k318, ts_daily_test)[2, "MAE"],
-#     accuracy(TBATS_for, ts_daily_test)[2, "MAE"],
-#     accuracy_hybrid[2, "MAE"]
-#   ),
-#   MAPE = c(
-#     accuracy(NN_for_k28, ts_daily_test)[2, "MAPE"],
-#     accuracy(NN_for_k212_base, ts_daily_test)[2, "MAPE"],
-#     accuracy(NN_for_k212, ts_daily_test)[2, "MAPE"],
-#     accuracy(NN_for_k318, ts_daily_test)[2, "MAPE"],
-#     accuracy(TBATS_for, ts_daily_test)[2, "MAPE"],
-#     accuracy_hybrid[2, "MAPE"]
-#   )
-# )
-# 
-# kable(comparison, caption = "Performance Comparison of NNAR + Fourier and TBATS Models")
 ```
 
 # Retraining and Forecasting on Full Data
 
-## Model 3: NNAR + Fourier (K = c(2,12)) + Temp
+
+## Model 1: NNAR + Fourier (K = c(2,8))
 
 ```{r}
-# defining full time series
-ts_full <- ts_electricity_daily
+# Use horizon for forecasting
+horizon <- length(ts_daily_test)
 
-# Set K for Fourier
-K3 <- c(2, 12)
+# Fit the NNAR model with Fourier terms using the full training dataset
+NN_fit_k28_full <- nnetar(ts_electricity_daily, p = 2, P = 2, xreg = fourier(ts_electricity_daily, K = c(2, 8)))
 
-# Create regressors: temperature + Fourier terms
-xreg_full_3 <- cbind(full_daily$daily_avg_temp, fourier(ts_full, K = K3))
+# Forecast for the desired horizon
+NN_for_k28_full <- forecast(NN_fit_k28_full, h = horizon, xreg = fourier(ts_electricity_daily, K = c(2, 8), h = horizon))
 
-# Create forecast regressors: last 59 days of temp + Fourier terms for h = 59
-xreg_fc_3 <- cbind(
-  tail(full_daily$daily_avg_temp, horizon),  # Last 59 days of temperature
-  fourier(ts_full, K = K3, h = horizon)     # Fourier terms for 59-day forecast
+# Create a data frame for the forecast results
+forecast_results_k28 <- data.frame(
+  date = seq(as.Date("2011-01-01"), by = "day", length.out = horizon),
+  load = NN_for_k28_full$mean
 )
 
-# Fit the NNAR model
-fit_nnar_k212_temp <- nnetar(
-  ts_full,
-  p = 2,
-  P = 2,
-  xreg = xreg_full_3
+# View the forecast results
+head(forecast_results_k28)
+
+```
+
+
+## Model 2: NNAR + Fourier (K = c(2,12))
+
+```{r}
+# Use horizon for forecasting
+horizon <- length(ts_daily_test)
+
+# Fit the NNAR model with Fourier terms using the full training dataset
+NN_fit_k212_base_full <- nnetar(ts_electricity_daily, p = 2, P = 2, xreg = fourier(ts_electricity_daily, K = c(2, 12)))
+
+# Forecast for the desired horizon
+NN_for_k212_base_full <- forecast(NN_fit_k212_base_full, h = horizon, xreg = fourier(ts_electricity_daily, K = c(2, 12), h = horizon))
+
+# Create a data frame for the forecast results
+forecast_results_k212_base <- data.frame(
+  date = seq(as.Date("2011-01-01"), by = "day", length.out = horizon),
+  load = NN_for_k212_base_full$mean
 )
 
-# Forecast
-fc_nnar_k212_temp <- forecast(
-  fit_nnar_k212_temp,
-  h = horizon,
-  xreg = xreg_fc_3
-)
-# Defining forecast horizon and dates
-final_dates <- seq(as.Date("2011-01-01"), as.Date("2011-02-28"), by = "day")
-horizon <- length(final_dates)
-# Final Forecast df
-final_nnar_k212_temp_df <- data.frame(
-  date = final_dates,
-  load = as.numeric(fc_nnar_k212_temp$mean)
-)
+# View the forecast results
+head(forecast_results_k212_base)
 
+```
+
+
+
+## Model 3: NNAR + Fourier
+
+```{r}
+# Fit the NNAR model with Fourier terms using the full training dataset
+NNAR_Fourier_full_fit <- nnetar(ts_electricity_daily, p = 2, P = 2, xreg = fourier(ts_electricity_daily, K = c(2, 12)))
+
+# Forecast for the desired horizon (January 1 to February 28, 2011)
+horizon_full <- 59  # Number of days to forecast
+NNAR_Fourier_full_forecast <- forecast(NNAR_Fourier_full_fit, h = horizon_full, xreg = fourier(ts_electricity_daily, K = c(2, 12), h = horizon_full))
+
+# Create a data frame for the forecast results
+forecast_results <- data.frame(
+  date = seq(as.Date("2011-01-01"), by = "day", length.out = horizon_full),
+  load = NNAR_Fourier_full_forecast$mean
+)
 
 ```
 
@@ -454,46 +401,191 @@ final_nnar_k318_df <- data.frame(
 
 ```
 
-## Model 6: ARIMA + NNAR Hybrid
-
+## Model 5: TBATS
 ```{r}
-# Step 1: Fit ARIMA on full data
+# Use horizon for forecasting
+horizon <- length(ts_daily_test)
 
-# Convert msts to standard ts object
-ts_full_simple <- ts(
-  data = as.numeric(ts_full),
-  start = c(2005, 1),
-  frequency = 365.25
+# Fit TBATS model (training data assumed to be ts_daily_train)
+TBATS_fit_full <- tbats(ts_daily_train)
+
+# Forecast for the desired horizon
+TBATS_for_full <- forecast(TBATS_fit_full, h = horizon)
+
+# Forecast plot
+autoplot(TBATS_for_full) +
+  ggtitle("Model 5: TBATS Forecast") +
+  ylab("Load")
+
+# Overlay plot
+autoplot(ts_daily_train) +
+  autolayer(TBATS_for_full, series = "TBATS", PI = FALSE) +
+  ylab("Load")
+
+# Accuracy on test set
+accuracy(TBATS_for_full, ts_daily_test)
+
+# Create a data frame for the forecast results
+forecast_results_tbats <- data.frame(
+  date = seq(as.Date("2011-01-01"), by = "day", length.out = horizon),
+  load = as.numeric(TBATS_for_full$mean)
 )
 
-# Now fit ARIMA on this standard ts object
-fit_arima_full <- auto.arima(ts_full_simple)
-
-
-# Step 2: Get residuals and fit NNAR
-res_arima_full <- residuals(fit_arima_full)
-fit_nnar_resid_full <- nnetar(res_arima_full)
-
-# Step 3: Forecast individually
-fc_arima_final <- forecast(fit_arima_full, h = horizon)
-fc_nnar_resid_final <- forecast(fit_nnar_resid_full, h = horizon)
-
-# Step 4: Combine forecasts
-fc_hybrid_final <- fc_arima_final$mean + fc_nnar_resid_final$mean
-
-# Step 5: Save as dataframe
-final_hybrid_df <- data.frame(
-  date = final_dates,
-  load = as.numeric(fc_hybrid_final)
-)
 ```
+
 
 # Exporting Dataset
 
 ```{r}
-write.csv(final_nnar_k212_temp_df, "submission_nnar_k212_temp.csv", row.names = FALSE)
-write.csv(final_nnar_k318_df, "submission_nnar_k318.csv", row.names = FALSE)
-write.csv(final_hybrid_df, "submission_arima_nnar_hybrid.csv", row.names = FALSE)
+write.csv(forecast_results_k28, file = here::here("Submission Files", "NNAR_Fourier_K28.csv"), row.names = FALSE)
+write.csv(forecast_results_k212_base, file = here::here("Submission Files", "forecast_results_k212_base.csv"), row.names = FALSE)
+write.csv(forecast_results, file = here::here("Submission Files", "NNAR_Fourier.csv"), row.names = FALSE)
+write.csv(final_nnar_k318_df,file = here::here("Submission Files", "submission_nnar_k318.csv"), row.names = FALSE)
+write.csv(forecast_results_tbats,file = here::here("Submission Files", "forecast_results_tbats.csv"), row.names = FALSE)
 
 ```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!-- ## Model Testing Not Included -->
+<!-- ### 1. NNAR + Fourier -->
+
+<!-- ```{r} -->
+<!-- # NNAR + Fourier Model -->
+<!-- # I chose to use a Neural Network Autoregressive (NNAR) model with Fourier terms (K = c(2, 12)) -->
+<!-- # to capture complex seasonal and nonlinear patterns in the daily electricity data. -->
+<!-- # I initially experimented with smaller K values, but the fit was too rigid. -->
+<!-- # Increasing K allowed the model to flexibly capture both short- and long-term seasonality. -->
+
+<!-- horizon <- length(ts_daily_test) -->
+
+<!-- # Fit the NNAR model with Fourier terms -->
+<!-- NNAR_Fourier_fit <- nnetar( -->
+<!--   ts_daily_train, -->
+<!--   p = 2, P = 2, -->
+<!--   xreg = fourier(ts_daily_train, K = c(2, 12)) -->
+<!-- ) -->
+
+<!-- # Forecast using the fitted model -->
+<!-- NNAR_Fourier_forecast <- forecast( -->
+<!--   NNAR_Fourier_fit, -->
+<!--   h = horizon, -->
+<!--   xreg = fourier(ts_daily_train, K = c(2, 12), h = horizon) -->
+<!-- ) -->
+
+<!-- # Plot the forecast against the test data -->
+<!-- # This visual check helped me confirm that the forecast captured both the trend and seasonal fluctuation well. -->
+<!-- autoplot(ts_daily_test) + -->
+<!--   autolayer(NNAR_Fourier_forecast, series = "NNAR + Fourier (K=2,12)") -->
+
+<!-- # Calculate accuracy metrics -->
+
+<!-- accuracy(NNAR_Fourier_forecast, ts_daily_test) # Score 23.48 -->
+<!-- ``` -->
+
+<!-- ```{r} -->
+
+
+<!-- # Export the forecast results to a CSV file -->
+
+
+<!-- # Display the forecast results -->
+<!-- head(forecast_results) -->
+<!-- ``` -->
+
+<!-- ## Not so Great -->
+<!-- ### NN + Fourier K(2,12) with regressor -->
+<!-- ```{r} -->
+<!-- ts_temp_daily <- msts(full_daily$daily_avg_temp, -->
+<!--                       seasonal.periods = c(7, 365.25), -->
+<!--                       start = decimal_date(as.Date("2005-01-01"))) -->
+
+<!-- # Splitting temperature into train/test sets to match electricity demand -->
+<!-- temp_train <- window(ts_temp_daily, end = c(2009, 365)) -->
+<!-- temp_test  <- window(ts_temp_daily, start = c(2010, 1), end = c(2010, 59)) -->
+
+
+<!-- horizon <- length(ts_daily_test) -->
+<!-- K <- c(2, 12) -->
+
+<!-- xreg_train <- cbind( -->
+<!--   temp_train, -->
+<!--   fourier(ts_daily_train, K = K) -->
+<!-- ) -->
+<!-- xreg_test <- cbind( -->
+<!--   temp_test, -->
+<!--   fourier(ts_daily_train, K = K, h = horizon) -->
+<!-- ) -->
+
+<!-- NN_fit_k212 <- nnetar( -->
+<!--   ts_daily_train, -->
+<!--   p    = 2, -->
+<!--   P    = 2, -->
+<!--   xreg = xreg_train -->
+<!-- ) -->
+
+<!-- NN_for_k212 <- forecast( -->
+<!--   NN_fit_k212, -->
+<!--   h    = horizon, -->
+<!--   xreg = xreg_test -->
+<!-- ) -->
+
+<!-- autoplot(NN_for_k212) + ggtitle("NNAR + Fourier (K = c(2,12)) Forecast") -->
+<!-- accuracy(NN_for_k212, ts_daily_test) ## Score 42 -->
+<!-- ``` -->
+
+
+<!-- ### Model 6: ARIMA + NNAR Hybrid on Train/Test Data -->
+
+<!-- ```{r} -->
+<!-- # Convert to univariate ts with daily frequency (e.g., yearly seasonality only) -->
+<!-- # 1. Make sure your input is a plain ts object -->
+<!-- ts_daily_train_ts <- ts(as.numeric(ts_daily_train), start = c(2005, 1), frequency = 365.25) -->
+
+<!-- # 2. Fit plain ARIMA model -->
+<!-- fit_arima <- auto.arima(ts_daily_train_ts, seasonal = TRUE) -->
+
+<!-- # 3. Forecast ARIMA -->
+<!-- fc_arima_test <- forecast(fit_arima, h = horizon) -->
+
+<!-- # 4. Get ARIMA residuals -->
+<!-- res_arima <- residuals(fit_arima) -->
+
+<!-- # 5. Fit NNAR on residuals -->
+<!-- fit_nnar_resid <- nnetar(res_arima) -->
+
+<!-- # 6. Forecast residuals -->
+<!-- fc_nnar_resid_test <- forecast(fit_nnar_resid, h = horizon) -->
+
+<!-- # 7. Combine ARIMA + NNAR forecasts -->
+<!-- fc_hybrid_test <- fc_arima_test$mean + fc_nnar_resid_test$mean -->
+
+
+<!-- autoplot(ts_daily_test) + -->
+<!--   autolayer(fc_arima_test$mean, series = "ARIMA", PI = FALSE) + -->
+<!--   autolayer(fc_hybrid_test, series = "ARIMA + NNAR", PI = FALSE) + -->
+<!--   ggtitle("Model 6: ARIMA + NNAR Hybrid Forecast") + -->
+<!--   ylab("Load") -->
+
+
+<!-- fc_hybrid_test <- fc_arima_test$mean + fc_nnar_resid_test$mean -->
+
+<!-- # Convert hybrid forecast to a time series to match test set -->
+<!-- fc_hybrid_ts <- ts(fc_hybrid_test, start = start(ts_daily_test), frequency = frequency(ts_daily_test)) -->
+
+<!-- # Compute accuracy -->
+<!-- accuracy_hybrid <- accuracy(fc_hybrid_ts, ts_daily_test) -->
+<!-- ``` -->
 

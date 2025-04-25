@@ -1,6 +1,16 @@
 ---
 title: "Bhuyan_Chuang_Martinez_CompetitionReport_S25"
-output: html_document
+author: "Bhuyan, Chuang, Martinez"
+date: "`r Sys.Date()`"
+output:
+  pdf_document:
+    latex_engine: xelatex
+    toc: true
+    toc_depth: 2
+    number_sections: true
+    fig_caption: true
+editor_options: 
+  chunk_output_type: console
 ---
 
 Github repository: https://github.com/jessalynlc/BhuyanChuangMartinez_ENV797_TSA_ForecastCompetition_S25
@@ -180,14 +190,13 @@ autoplot(ts_daily_test) + ggtitle("Test Set: Daily Demand (Jan-Feb 2010)")
 
 Trying to improve generalization from Neural Network 2 by decreasing number of seasonal harmonics 
 
-```{r ETS, echo=TRUE, message=FALSE, warning=FALSE}
+```{r NN, echo=TRUE, message=FALSE, warning=FALSE}
 NN_fit <- nnetar(ts_daily_train,
                   p=2,
                   P=2,
                   xreg=fourier(ts_daily_train, K=c(2, 8)))
 
-NN_for <- forecast(NN_fit, h=horizon,xreg=fourier(ts_daily_train, 
-                                           K=c(2,8),h = horizon))
+NN_for <- forecast(NN_fit, h=horizon,xreg=fourier(ts_daily_train, K=c(2,8),h = horizon))
 
 #Plot model + observed data
 autoplot(ts_daily_train) +

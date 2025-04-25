@@ -1,6 +1,6 @@
 ---
 title: "Bhuyan_Chuang_Martinez_CompetitionReport_S25"
-author: "Mazhar Bhuyan"
+author: "Jessalyn Chuang, Mazhar Bhuyan, Sayra Martinez"
 date: "2025-04-25"
 output:
   pdf_document:
@@ -278,3 +278,11 @@ This report reflects our systematic approach to model selection, validation, and
 ## Acknowledgment of AI Assistance
 
 ChatGPT was used for troubleshooting code syntax. All models and forecasts were executed and validated locally in RStudio by the authors.
+
+
+
+
+
+
+
+

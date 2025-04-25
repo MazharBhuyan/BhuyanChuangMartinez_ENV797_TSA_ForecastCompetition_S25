@@ -1,11 +1,12 @@
 ---
-output: html_document
-editor_options: 
+title: "Bhuyan_Chuang_Martinez"
+author: "Jessalyn Chuang, Mazhar Bhuyan, Sayra Martinez"
+date: "`r Sys.Date()`"
+output:
+  pdf_document: default
+  html_document: default
+editor_options:
   chunk_output_type: console
----
-
-title: "Comprehensive Codes"
-output: html_document
 ---
 
 Github repository: https://github.com/jessalynlc/BhuyanChuangMartinez_ENV797_TSA_ForecastCompetition_S25
@@ -38,24 +39,29 @@ library(xts)
 ```{r Data Wrangling, include=FALSE}
 #Importing time series data (relative humidity and temperature optional but importing)
 #load data: this is daily data, with 24 different sensors
-load_data <- read_excel(
-  path = "./Data/load.xlsx",
-  sheet = 1
-)
+# Load data
+load_data <- read_excel(here::here("Data", "load.xlsx"))
+relative_humidity_data <- read_excel(here::here("Data", "relative_humidity.xlsx"))
+temperature_data <- read_excel(here::here("Data", "temperature.xlsx"))
+
+# load_data <- read_excel(
+#   path = "./Data/load.xlsx",
+#   sheet = 1
+# )
 sum(is.na(load_data))
 sum(load_data == 0, na.rm = TRUE)
 
-relative_humidity_data <- read_excel(
-  path = "./Data/relative_humidity.xlsx",
-  sheet = 1
-)
+# relative_humidity_data <- read_excel(
+#   path = "./Data/relative_humidity.xlsx",
+#   sheet = 1
+# )
 sum(is.na(relative_humidity_data))
 sum(relative_humidity_data == 0, na.rm = TRUE)
 
-temperature_data <- read_excel(
-  path = "./Data/temperature.xlsx",
-  sheet = 1
-)
+# temperature_data <- read_excel(
+#   path = "./Data/temperature.xlsx",
+#   sheet = 1
+# )
 sum(is.na(temperature_data))
 sum(temperature_data == 0, na.rm = TRUE)
 ```
@@ -299,7 +305,7 @@ kable(
 # Retraining and Forecasting on Full Data
 
 
-## Model 1: NNAR + Fourier (K = c(2,8))
+### Model 1: NNAR + Fourier (K = c(2,8))
 
 ```{r}
 # Use horizon for forecasting
@@ -323,7 +329,7 @@ head(forecast_results_k28)
 ```
 
 
-## Model 2: NNAR + Fourier (K = c(2,12))
+### Model 2: NNAR + Fourier (K = c(2,12))
 
 ```{r}
 # Use horizon for forecasting
@@ -348,7 +354,7 @@ head(forecast_results_k212_base)
 
 
 
-## Model 3: NNAR + Fourier
+### Model 3: NNAR + Fourier
 
 ```{r}
 # Fit the NNAR model with Fourier terms using the full training dataset
@@ -366,10 +372,12 @@ forecast_results <- data.frame(
 
 ```
 
-## Model 4: NNAR + Fourier (K = c(3,18))
+### Model 4: NNAR + Fourier (K = c(3,18))
 ```{r}
 # Set K for Fourier
 K4 <- c(3, 18)
+# Training
+ts_full <- window(ts_electricity_daily, end = c(2010, 365))
 
 # Create Fourier regressors
 xreg_full_4 <- fourier(ts_full, K = K4)
@@ -395,13 +403,13 @@ fc_nnar_k318 <- forecast(
 
 # Create forecast dataframe
 final_nnar_k318_df <- data.frame(
-  date = final_dates,
+  date = seq(as.Date("2011-01-01"), by = "day", length.out = horizon_full),
   load = as.numeric(fc_nnar_k318$mean)
 )
 
 ```
 
-## Model 5: TBATS
+### Model 5: TBATS
 ```{r}
 # Use horizon for forecasting
 horizon <- length(ts_daily_test)
@@ -442,6 +450,7 @@ write.csv(forecast_results_k212_base, file = here::here("Submission Files", "for
 write.csv(forecast_results, file = here::here("Submission Files", "NNAR_Fourier.csv"), row.names = FALSE)
 write.csv(final_nnar_k318_df,file = here::here("Submission Files", "submission_nnar_k318.csv"), row.names = FALSE)
 write.csv(forecast_results_tbats,file = here::here("Submission Files", "forecast_results_tbats.csv"), row.names = FALSE)
+write.csv(forecast_results_tbats, "submission_arima_nnar_hybrid.csv", row.names = FALSE)
 
 ```
 
